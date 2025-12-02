@@ -1,991 +1,786 @@
-// HOTEL MANAGEMENT SYSTEM WITH API INTEGRATION - FIXED DELETE
-console.log('Hotel Management System Starting...');
-
-// API Configuration
-const API_BASE_URL = 'https://hotelmanangementapi-2.onrender.com'; // Change this to your actual API URL
-const MOCK_API = true; // Set to false to use real API
-
-// API Endpoints
-const API_ENDPOINTS = {
-    ROOMS: '/rooms',
-    GUESTS: '/guests',
-    BOOKINGS: '/bookings',
-    DASHBOARD: '/dashboard'
-};
+// Configuration - Update this with your backend API URL
+const API_BASE_URL = 'https://hotelmanangementapi-2.onrender.com'; // Change this to your backend URL
 
 // Global state
-let roomsData = [];
-let guestsData = [];
-let bookingsData = [];
-let currentDeleteInfo = null;
+let currentSection = 'dashboard';
+let rooms = [];
+let guests = [];
+let bookings = [];
+let deleteId = null;
+let deleteType = null;
 
-// Initialize the application
+// Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM fully loaded');
+    console.log('DOM Loaded - Initializing Hotel Management System');
     initApp();
 });
 
-async function initApp() {
-    console.log('Initializing application...');
-    
-    try {
-        // Load all data from API
-        await Promise.all([
-            loadRooms(),
-            loadGuests(),
-            loadBookings()
-        ]);
-        
-        setupNavigation();
-        setupButtons();
-        setupModals();
-        setupEventListeners();
-        updateDashboardStats();
-        console.log('Application initialized successfully');
-    } catch (error) {
-        console.error('Failed to initialize app:', error);
-        alert('Failed to load application data. Please try again.');
-    }
-}
-
-// ==================== API SERVICE FUNCTIONS ====================
-
-// Generic API function
-async function apiCall(endpoint, method = 'GET', data = null) {
-    if (MOCK_API) {
-        // Use localStorage as mock API
-        return mockApi(endpoint, method, data);
-    }
-    
-    // Real API call
-    const url = `${API_BASE_URL}${endpoint}`;
-    const options = {
-        method,
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        }
-    };
-    
-    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-        options.body = JSON.stringify(data);
-    }
-    
-    try {
-        const response = await fetch(url, options);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        console.error(`API Error (${method} ${endpoint}):`, error);
-        throw error;
-    }
-}
-
-// Mock API using localStorage
-function mockApi(endpoint, method, data) {
-    return new Promise((resolve, reject) => {
-        setTimeout(() => {
-            try {
-                let result;
-                
-                switch (endpoint) {
-                    case API_ENDPOINTS.ROOMS:
-                        result = handleRoomsMock(method, data);
-                        break;
-                    case API_ENDPOINTS.GUESTS:
-                        result = handleGuestsMock(method, data);
-                        break;
-                    case API_ENDPOINTS.BOOKINGS:
-                        result = handleBookingsMock(method, data);
-                        break;
-                    case API_ENDPOINTS.DASHBOARD:
-                        result = handleDashboardMock();
-                        break;
-                    default:
-                        // Handle endpoints with IDs like /bookings/1
-                        if (endpoint.startsWith(API_ENDPOINTS.BOOKINGS + '/')) {
-                            result = handleBookingByIdMock(endpoint, method, data);
-                        } else if (endpoint.startsWith(API_ENDPOINTS.ROOMS + '/')) {
-                            result = handleRoomByIdMock(endpoint, method, data);
-                        } else if (endpoint.startsWith(API_ENDPOINTS.GUESTS + '/')) {
-                            result = handleGuestByIdMock(endpoint, method, data);
-                        } else {
-                            throw new Error(`Unknown endpoint: ${endpoint}`);
-                        }
-                }
-                
-                resolve(result);
-            } catch (error) {
-                reject(error);
-            }
-        }, 300); // Simulate network delay
-    });
-}
-
-// Mock handlers for bookings - FIXED VERSION
-function handleBookingsMock(method, data) {
-    const storageKey = 'hotel_bookings';
-    
-    switch (method) {
-        case 'GET':
-            let bookings = JSON.parse(localStorage.getItem(storageKey));
-            if (!bookings || !Array.isArray(bookings)) {
-                bookings = [
-                    { 
-                        id: 1, 
-                        guestId: 1, 
-                        roomId: 4, 
-                        checkIn: '2024-01-15', 
-                        checkOut: '2024-01-20', 
-                        status: 'confirmed', 
-                        totalPrice: 745, 
-                        numberOfGuests: 2,
-                        specialRequests: 'Early check-in requested',
-                        createdAt: new Date().toISOString()
-                    }
-                ];
-                localStorage.setItem(storageKey, JSON.stringify(bookings));
-            }
-            return { data: bookings };
-            
-        case 'POST':
-            let existingBookings = JSON.parse(localStorage.getItem(storageKey)) || [];
-            const newBooking = {
-                id: existingBookings.length > 0 ? Math.max(...existingBookings.map(b => b.id)) + 1 : 1,
-                ...data,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-            existingBookings.push(newBooking);
-            localStorage.setItem(storageKey, JSON.stringify(existingBookings));
-            return { data: newBooking, message: 'Booking created successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for bookings endpoint: ${method}`);
-    }
-}
-
-// Handle specific booking by ID (for PUT and DELETE)
-function handleBookingByIdMock(endpoint, method, data) {
-    const storageKey = 'hotel_bookings';
-    const bookingId = parseInt(endpoint.split('/').pop());
-    
-    let bookings = JSON.parse(localStorage.getItem(storageKey)) || [];
-    
-    switch (method) {
-        case 'PUT':
-        case 'PATCH':
-            const index = bookings.findIndex(b => b.id === bookingId);
-            if (index !== -1) {
-                bookings[index] = {
-                    ...bookings[index],
-                    ...data,
-                    updatedAt: new Date().toISOString()
-                };
-                localStorage.setItem(storageKey, JSON.stringify(bookings));
-                return { data: bookings[index], message: 'Booking updated successfully' };
-            }
-            throw new Error('Booking not found');
-            
-        case 'DELETE':
-            // FIXED: Simple delete without checking data parameter
-            const initialLength = bookings.length;
-            bookings = bookings.filter(b => b.id !== bookingId);
-            
-            if (bookings.length === initialLength) {
-                throw new Error('Booking not found');
-            }
-            
-            localStorage.setItem(storageKey, JSON.stringify(bookings));
-            return { message: 'Booking deleted successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for booking ID endpoint: ${method}`);
-    }
-}
-
-// Mock handlers for rooms
-function handleRoomsMock(method, data) {
-    const storageKey = 'hotel_rooms';
-    
-    switch (method) {
-        case 'GET':
-            let rooms = JSON.parse(localStorage.getItem(storageKey));
-            if (!rooms || !Array.isArray(rooms)) {
-                rooms = [
-                    { id: 1, number: '101', type: 'Single', price: 99, status: 'available', capacity: 2, amenities: ['WiFi', 'TV'] },
-                    { id: 2, number: '102', type: 'Single', price: 99, status: 'available', capacity: 2, amenities: ['WiFi', 'TV'] },
-                    { id: 3, number: '201', type: 'Double', price: 149, status: 'available', capacity: 4, amenities: ['WiFi', 'TV', 'AC'] },
-                    { id: 4, number: '202', type: 'Double', price: 149, status: 'occupied', capacity: 4, amenities: ['WiFi', 'TV', 'AC'] },
-                    { id: 5, number: '301', type: 'Suite', price: 299, status: 'available', capacity: 6, amenities: ['WiFi', 'TV', 'AC', 'Mini Bar'] }
-                ];
-                localStorage.setItem(storageKey, JSON.stringify(rooms));
-            }
-            return { data: rooms };
-            
-        case 'POST':
-            let existingRooms = JSON.parse(localStorage.getItem(storageKey)) || [];
-            const newRoom = {
-                id: existingRooms.length > 0 ? Math.max(...existingRooms.map(r => r.id)) + 1 : 1,
-                ...data,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-            existingRooms.push(newRoom);
-            localStorage.setItem(storageKey, JSON.stringify(existingRooms));
-            return { data: newRoom, message: 'Room created successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for rooms endpoint: ${method}`);
-    }
-}
-
-// Handle specific room by ID
-function handleRoomByIdMock(endpoint, method, data) {
-    const storageKey = 'hotel_rooms';
-    const roomId = parseInt(endpoint.split('/').pop());
-    
-    let rooms = JSON.parse(localStorage.getItem(storageKey)) || [];
-    
-    switch (method) {
-        case 'PUT':
-        case 'PATCH':
-            const index = rooms.findIndex(r => r.id === roomId);
-            if (index !== -1) {
-                rooms[index] = {
-                    ...rooms[index],
-                    ...data,
-                    updatedAt: new Date().toISOString()
-                };
-                localStorage.setItem(storageKey, JSON.stringify(rooms));
-                return { data: rooms[index], message: 'Room updated successfully' };
-            }
-            throw new Error('Room not found');
-            
-        case 'DELETE':
-            const initialLength = rooms.length;
-            rooms = rooms.filter(r => r.id !== roomId);
-            
-            if (rooms.length === initialLength) {
-                throw new Error('Room not found');
-            }
-            
-            localStorage.setItem(storageKey, JSON.stringify(rooms));
-            return { message: 'Room deleted successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for room ID endpoint: ${method}`);
-    }
-}
-
-// Mock handlers for guests
-function handleGuestsMock(method, data) {
-    const storageKey = 'hotel_guests';
-    
-    switch (method) {
-        case 'GET':
-            let guests = JSON.parse(localStorage.getItem(storageKey));
-            if (!guests || !Array.isArray(guests)) {
-                guests = [
-                    { id: 1, name: 'John Doe', email: 'john@email.com', phone: '+1234567890', nationality: 'USA', idDocument: 'PAS123456', createdAt: new Date().toISOString() },
-                    { id: 2, name: 'Jane Smith', email: 'jane@email.com', phone: '+1234567891', nationality: 'Canada', idDocument: 'PAS123457', createdAt: new Date().toISOString() },
-                    { id: 3, name: 'Mike Johnson', email: 'mike@email.com', phone: '+1234567892', nationality: 'UK', idDocument: 'PAS123458', createdAt: new Date().toISOString() }
-                ];
-                localStorage.setItem(storageKey, JSON.stringify(guests));
-            }
-            return { data: guests };
-            
-        case 'POST':
-            let existingGuests = JSON.parse(localStorage.getItem(storageKey)) || [];
-            const newGuest = {
-                id: existingGuests.length > 0 ? Math.max(...existingGuests.map(g => g.id)) + 1 : 1,
-                ...data,
-                idDocument: `PAS${Math.floor(100000 + Math.random() * 900000)}`,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-            existingGuests.push(newGuest);
-            localStorage.setItem(storageKey, JSON.stringify(existingGuests));
-            return { data: newGuest, message: 'Guest created successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for guests endpoint: ${method}`);
-    }
-}
-
-// Handle specific guest by ID
-function handleGuestByIdMock(endpoint, method, data) {
-    const storageKey = 'hotel_guests';
-    const guestId = parseInt(endpoint.split('/').pop());
-    
-    let guests = JSON.parse(localStorage.getItem(storageKey)) || [];
-    
-    switch (method) {
-        case 'PUT':
-        case 'PATCH':
-            const index = guests.findIndex(g => g.id === guestId);
-            if (index !== -1) {
-                guests[index] = {
-                    ...guests[index],
-                    ...data,
-                    updatedAt: new Date().toISOString()
-                };
-                localStorage.setItem(storageKey, JSON.stringify(guests));
-                return { data: guests[index], message: 'Guest updated successfully' };
-            }
-            throw new Error('Guest not found');
-            
-        case 'DELETE':
-            const initialLength = guests.length;
-            guests = guests.filter(g => g.id !== guestId);
-            
-            if (guests.length === initialLength) {
-                throw new Error('Guest not found');
-            }
-            
-            localStorage.setItem(storageKey, JSON.stringify(guests));
-            return { message: 'Guest deleted successfully' };
-            
-        default:
-            throw new Error(`Unsupported method for guest ID endpoint: ${method}`);
-    }
-}
-
-function handleDashboardMock() {
-    const rooms = JSON.parse(localStorage.getItem('hotel_rooms')) || [];
-    const guests = JSON.parse(localStorage.getItem('hotel_guests')) || [];
-    const bookings = JSON.parse(localStorage.getItem('hotel_bookings')) || [];
-    
-    const totalRooms = rooms.length;
-    const availableRooms = rooms.filter(room => room.status === 'available').length;
-    const totalGuests = guests.length;
-    const activeBookings = bookings.filter(booking => 
-        booking.status === 'confirmed' || booking.status === 'checked-in'
-    ).length;
-    
-    return {
-        data: {
-            totalRooms,
-            availableRooms,
-            totalGuests,
-            activeBookings,
-            occupancyRate: totalRooms > 0 ? ((totalRooms - availableRooms) / totalRooms * 100).toFixed(1) : 0
-        }
-    };
-}
-
-// ==================== DATA LOADING FUNCTIONS ====================
-
-async function loadRooms() {
-    try {
-        const response = await apiCall(API_ENDPOINTS.ROOMS, 'GET');
-        roomsData = response.data || [];
-        loadRoomsTable();
-    } catch (error) {
-        console.error('Error loading rooms:', error);
-        roomsData = [];
-        showError('Failed to load rooms data');
-    }
-}
-
-async function loadGuests() {
-    try {
-        const response = await apiCall(API_ENDPOINTS.GUESTS, 'GET');
-        guestsData = response.data || [];
-        loadGuestsTable();
-    } catch (error) {
-        console.error('Error loading guests:', error);
-        guestsData = [];
-        showError('Failed to load guests data');
-    }
-}
-
-async function loadBookings() {
-    try {
-        const response = await apiCall(API_ENDPOINTS.BOOKINGS, 'GET');
-        bookingsData = response.data || [];
-        loadBookingsTable();
-    } catch (error) {
-        console.error('Error loading bookings:', error);
-        bookingsData = [];
-        showError('Failed to load bookings data');
-    }
-}
-
-// ==================== UI SETUP FUNCTIONS ====================
-
-function setupNavigation() {
-    const navLinks = document.querySelectorAll('.nav-link');
-    
-    navLinks.forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const sectionName = this.getAttribute('data-section');
-            
-            navLinks.forEach(l => l.classList.remove('active'));
-            this.classList.add('active');
-            
-            document.querySelectorAll('.section').forEach(section => {
-                section.classList.remove('active');
-            });
-            
-            const targetSection = document.getElementById(sectionName);
-            if (targetSection) {
-                targetSection.classList.add('active');
-            }
-        });
-    });
-}
-
-function setupButtons() {
-    document.getElementById('add-room-btn').addEventListener('click', showRoomModal);
-    document.getElementById('add-guest-btn').addEventListener('click', showGuestModal);
-    document.getElementById('add-booking-btn').addEventListener('click', showBookingModal);
-}
-
-function setupModals() {
-    document.getElementById('room-cancel-btn').addEventListener('click', () => hideModal('room-modal'));
-    document.getElementById('guest-cancel-btn').addEventListener('click', () => hideModal('guest-modal'));
-    document.getElementById('booking-cancel-btn').addEventListener('click', () => hideModal('booking-modal'));
-    document.getElementById('delete-cancel-btn').addEventListener('click', () => hideModal('delete-modal'));
-    
-    document.getElementById('room-form').addEventListener('submit', handleRoomSubmit);
-    document.getElementById('guest-form').addEventListener('submit', handleGuestSubmit);
-    document.getElementById('booking-form').addEventListener('submit', handleBookingSubmit);
-    
-    document.getElementById('delete-confirm-btn').addEventListener('click', confirmDelete);
-    
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                hideModal(this.id);
-            }
-        });
-    });
+function initApp() {
+    setupEventListeners();
+    loadInitialData();
+    setupDefaultDates();
 }
 
 function setupEventListeners() {
-    document.addEventListener('click', function(e) {
-        if (e.target.classList.contains('delete-room')) {
-            const row = e.target.closest('tr');
-            const roomId = parseInt(row.getAttribute('data-id'));
-            const room = roomsData.find(r => r.id === roomId);
-            
-            if (room) {
-                currentDeleteInfo = { type: 'room', id: roomId };
-                document.getElementById('delete-message').textContent = 
-                    `Are you sure you want to delete Room ${room.number}? This action cannot be undone.`;
-                showModal('delete-modal');
-            }
-        }
-        
-        if (e.target.classList.contains('delete-guest')) {
-            const row = e.target.closest('tr');
-            const guestId = parseInt(row.getAttribute('data-id'));
-            const guest = guestsData.find(g => g.id === guestId);
-            
-            if (guest) {
-                currentDeleteInfo = { type: 'guest', id: guestId };
-                document.getElementById('delete-message').textContent = 
-                    `Are you sure you want to delete guest ${guest.name}? This action cannot be undone.`;
-                showModal('delete-modal');
-            }
-        }
-        
-        if (e.target.classList.contains('delete-booking')) {
-            const row = e.target.closest('tr');
-            const bookingId = parseInt(row.getAttribute('data-id'));
-            const booking = bookingsData.find(b => b.id === bookingId);
-            
-            if (booking) {
-                currentDeleteInfo = { type: 'booking', id: bookingId };
-                document.getElementById('delete-message').textContent = 
-                    `Are you sure you want to delete this booking? This action cannot be undone.`;
-                showModal('delete-modal');
-            }
-        }
-        
-        if (e.target.classList.contains('edit-room')) {
-            const row = e.target.closest('tr');
-            const roomId = parseInt(row.getAttribute('data-id'));
-            editRoom(roomId);
-        }
-        
-        if (e.target.classList.contains('edit-guest')) {
-            const row = e.target.closest('tr');
-            const guestId = parseInt(row.getAttribute('data-id'));
-            editGuest(guestId);
-        }
-        
-        if (e.target.classList.contains('edit-booking')) {
-            const row = e.target.closest('tr');
-            const bookingId = parseInt(row.getAttribute('data-id'));
-            editBooking(bookingId);
-        }
+    // Mobile menu
+    document.getElementById('mobileMenuBtn').addEventListener('click', toggleMobileMenu);
+    
+    // Navigation
+    document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', handleNavigation);
     });
     
-    document.getElementById('booking-checkin').addEventListener('change', updateBookingPrice);
-    document.getElementById('booking-checkout').addEventListener('change', updateBookingPrice);
-    document.getElementById('booking-room').addEventListener('change', updateBookingPrice);
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(tab => {
+        tab.addEventListener('click', handleTabClick);
+    });
+    
+    // Add buttons
+    document.getElementById('addRoomBtn').addEventListener('click', () => openRoomModal());
+    document.getElementById('addGuestBtn').addEventListener('click', () => openGuestModal());
+    document.getElementById('addBookingBtn').addEventListener('click', () => openBookingModal());
+    
+    // Modal close buttons
+    document.getElementById('closeRoomModal').addEventListener('click', () => closeRoomModal());
+    document.getElementById('cancelRoomBtn').addEventListener('click', () => closeRoomModal());
+    document.getElementById('saveRoomBtn').addEventListener('click', handleSaveRoom);
+    
+    document.getElementById('closeGuestModal').addEventListener('click', () => closeGuestModal());
+    document.getElementById('cancelGuestBtn').addEventListener('click', () => closeGuestModal());
+    document.getElementById('saveGuestBtn').addEventListener('click', handleSaveGuest);
+    
+    document.getElementById('closeBookingModal').addEventListener('click', () => closeBookingModal());
+    document.getElementById('cancelBookingBtn').addEventListener('click', () => closeBookingModal());
+    document.getElementById('saveBookingBtn').addEventListener('click', handleSaveBooking);
+    
+    // Confirmation modal
+    document.getElementById('closeConfirmModal').addEventListener('click', () => closeConfirmModal());
+    document.getElementById('cancelConfirmBtn').addEventListener('click', () => closeConfirmModal());
+    document.getElementById('confirmBtn').addEventListener('click', handleConfirmDelete);
+    
+    // Date validation
+    document.getElementById('checkIn').addEventListener('change', handleCheckInChange);
+    
+    // Event delegation for dynamic content
+    document.addEventListener('click', handleDynamicClick);
 }
 
-// ==================== ROOM FUNCTIONS ====================
+function setupDefaultDates() {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    
+    document.getElementById('checkIn').value = today;
+    document.getElementById('checkOut').value = tomorrowStr;
+    document.getElementById('checkIn').min = today;
+    document.getElementById('checkOut').min = tomorrowStr;
+}
 
-function showRoomModal(roomId = null) {
-    const title = document.getElementById('room-modal-title');
+function loadInitialData() {
+    // Initialize with sample data
+    rooms = [
+        { _id: '1', number: '101', type: 'Single', price: 120, status: 'available', createdAt: '2023-10-01' },
+        { _id: '2', number: '102', type: 'Double', price: 180, status: 'occupied', createdAt: '2023-10-02' },
+        { _id: '3', number: '201', type: 'Suite', price: 300, status: 'available', createdAt: '2023-10-03' },
+        { _id: '4', number: '202', type: 'Single', price: 120, status: 'available', createdAt: '2023-10-04' },
+        { _id: '5', number: '301', type: 'Deluxe', price: 350, status: 'occupied', createdAt: '2023-10-05' }
+    ];
+    
+    guests = [
+        { _id: '1', name: 'John Smith', email: 'john@example.com', phone: '+1 234 567 8901', createdAt: '2023-10-10' },
+        { _id: '2', name: 'Emma Johnson', email: 'emma@example.com', phone: '+1 234 567 8902', createdAt: '2023-10-11' },
+        { _id: '3', name: 'Michael Brown', email: 'michael@example.com', phone: '+1 234 567 8903', createdAt: '2023-10-12' },
+        { _id: '4', name: 'Sarah Davis', email: 'sarah@example.com', phone: '+1 234 567 8904', createdAt: '2023-10-13' }
+    ];
+    
+    bookings = [
+        { _id: '1', guestId: { _id: '1', name: 'John Smith' }, roomId: { _id: '2', number: '102' }, checkIn: '2023-10-15', checkOut: '2023-10-20', status: 'checked-in' },
+        { _id: '2', guestId: { _id: '3', name: 'Michael Brown' }, roomId: { _id: '5', number: '301' }, checkIn: '2023-10-18', checkOut: '2023-10-25', status: 'booked' },
+        { _id: '3', guestId: { _id: '2', name: 'Emma Johnson' }, roomId: { _id: '1', number: '101' }, checkIn: '2023-10-12', checkOut: '2023-10-14', status: 'checked-out' }
+    ];
+    
+    loadDashboardData();
+}
+
+// Event Handlers
+function toggleMobileMenu() {
+    document.getElementById('navLinks').classList.toggle('active');
+}
+
+function handleNavigation(e) {
+    e.preventDefault();
+    const section = this.getAttribute('data-section');
+    showSection(section);
+    
+    // Update active nav button
+    document.querySelectorAll('.nav-links a').forEach(btn => btn.classList.remove('active'));
+    this.classList.add('active');
+    
+    // Close mobile menu
+    document.getElementById('navLinks').classList.remove('active');
+}
+
+function handleTabClick() {
+    const tabId = this.getAttribute('data-tab');
+    showTab(tabId);
+}
+
+function handleDynamicClick(e) {
+    // Handle edit room button
+    if (e.target.closest('.edit-room-btn')) {
+        const button = e.target.closest('.edit-room-btn');
+        const roomId = button.getAttribute('data-id');
+        editRoom(roomId);
+    }
+    
+    // Handle delete room button
+    if (e.target.closest('.delete-room-btn')) {
+        const button = e.target.closest('.delete-room-btn');
+        const roomId = button.getAttribute('data-id');
+        confirmDelete(roomId, 'room');
+    }
+    
+    // Handle edit guest button
+    if (e.target.closest('.edit-guest-btn')) {
+        const button = e.target.closest('.edit-guest-btn');
+        const guestId = button.getAttribute('data-id');
+        editGuest(guestId);
+    }
+    
+    // Handle delete guest button
+    if (e.target.closest('.delete-guest-btn')) {
+        const button = e.target.closest('.delete-guest-btn');
+        const guestId = button.getAttribute('data-id');
+        confirmDelete(guestId, 'guest');
+    }
+    
+    // Handle edit booking button
+    if (e.target.closest('.edit-booking-btn')) {
+        const button = e.target.closest('.edit-booking-btn');
+        const bookingId = button.getAttribute('data-id');
+        editBooking(bookingId);
+    }
+    
+    // Handle delete booking button
+    if (e.target.closest('.delete-booking-btn')) {
+        const button = e.target.closest('.delete-booking-btn');
+        const bookingId = button.getAttribute('data-id');
+        confirmDelete(bookingId, 'booking');
+    }
+}
+
+function handleCheckInChange() {
+    const checkInDate = this.value;
+    const checkOutField = document.getElementById('checkOut');
+    checkOutField.min = checkInDate;
+    
+    if (checkOutField.value < checkInDate) {
+        const nextDay = new Date(checkInDate);
+        nextDay.setDate(nextDay.getDate() + 1);
+        checkOutField.value = nextDay.toISOString().split('T')[0];
+    }
+}
+
+// Section Navigation
+function showSection(section) {
+    document.querySelectorAll('.content-section').forEach(sec => {
+        sec.classList.remove('active');
+    });
+    
+    document.getElementById(section).classList.add('active');
+    currentSection = section;
+    
+    // Load data for the section
+    switch(section) {
+        case 'rooms':
+            loadRooms();
+            break;
+        case 'guests':
+            loadGuests();
+            break;
+        case 'bookings':
+            loadBookings();
+            break;
+        case 'dashboard':
+            loadDashboardData();
+            break;
+    }
+}
+
+function showTab(tabId) {
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    
+    document.querySelectorAll('.tab-btn').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    document.getElementById(tabId).classList.add('active');
+    document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+}
+
+// Data Loading Functions
+function loadDashboardData() {
+    try {
+        // Update stats
+        document.getElementById('rooms-count').textContent = rooms.length;
+        document.getElementById('guests-count').textContent = guests.length;
+        document.getElementById('bookings-count').textContent = bookings.length;
+        
+        const availableRooms = rooms.filter(room => room.status === 'available').length;
+        document.getElementById('available-rooms').textContent = availableRooms;
+        
+        // Populate recent bookings
+        const recentBookingsTable = document.getElementById('recent-bookings-table');
+        recentBookingsTable.innerHTML = bookings.slice(0, 3).map(booking => `
+            <tr>
+                <td>${booking._id}</td>
+                <td>${booking.guestId.name}</td>
+                <td>Room ${booking.roomId.number}</td>
+                <td>${formatDate(booking.checkIn)}</td>
+                <td>${formatDate(booking.checkOut)}</td>
+                <td><span class="status-badge status-${booking.status === 'booked' ? 'booked' : booking.status === 'checked-in' ? 'occupied' : 'available'}">${booking.status}</span></td>
+            </tr>
+        `).join('');
+        
+        // Populate recent guests
+        const recentGuestsTable = document.getElementById('recent-guests-table');
+        recentGuestsTable.innerHTML = guests.slice(0, 3).map(guest => `
+            <tr>
+                <td>${guest._id}</td>
+                <td>${guest.name}</td>
+                <td>${guest.email}</td>
+                <td>${guest.phone}</td>
+                <td>${formatDate(guest.createdAt)}</td>
+            </tr>
+        `).join('');
+        
+        // Populate recent rooms
+        const recentRoomsTable = document.getElementById('recent-rooms-table');
+        recentRoomsTable.innerHTML = rooms.slice(0, 3).map(room => `
+            <tr>
+                <td>${room.number}</td>
+                <td>${room.type}</td>
+                <td>$${room.price}/night</td>
+                <td><span class="status-badge status-${room.status}">${room.status}</span></td>
+                <td>${formatDate(room.createdAt)}</td>
+            </tr>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+        showNotification('Error loading dashboard data', 'error');
+    }
+}
+
+function loadRooms() {
+    try {
+        const roomsTable = document.getElementById('rooms-table');
+        roomsTable.innerHTML = rooms.map(room => `
+            <tr>
+                <td>${room.number}</td>
+                <td>${room.type}</td>
+                <td>$${room.price}/night</td>
+                <td><span class="status-badge status-${room.status}">${room.status}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-warning btn-sm edit-room-btn" data-id="${room._id}">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm delete-room-btn" data-id="${room._id}">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading rooms:', error);
+        showNotification('Error loading rooms', 'error');
+    }
+}
+
+function loadGuests() {
+    try {
+        const guestsTable = document.getElementById('guests-table');
+        guestsTable.innerHTML = guests.map(guest => `
+            <tr>
+                <td>${guest.name}</td>
+                <td>${guest.email}</td>
+                <td>${guest.phone}</td>
+                <td>${formatDate(guest.createdAt)}</td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-warning btn-sm edit-guest-btn" data-id="${guest._id}">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm delete-guest-btn" data-id="${guest._id}">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading guests:', error);
+        showNotification('Error loading guests', 'error');
+    }
+}
+
+function loadBookings() {
+    try {
+        const bookingsTable = document.getElementById('bookings-table');
+        bookingsTable.innerHTML = bookings.map(booking => `
+            <tr>
+                <td>${booking._id}</td>
+                <td>${booking.guestId.name}</td>
+                <td>Room ${booking.roomId.number}</td>
+                <td>${formatDate(booking.checkIn)}</td>
+                <td>${formatDate(booking.checkOut)}</td>
+                <td><span class="status-badge status-${booking.status === 'booked' ? 'booked' : booking.status === 'checked-in' ? 'occupied' : 'available'}">${booking.status}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn btn-warning btn-sm edit-booking-btn" data-id="${booking._id}">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <button class="btn btn-danger btn-sm delete-booking-btn" data-id="${booking._id}">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading bookings:', error);
+        showNotification('Error loading bookings', 'error');
+    }
+}
+
+// Room Functions
+function openRoomModal(roomId = null) {
+    const modal = document.getElementById('roomModal');
+    const title = document.getElementById('roomModalTitle');
     
     if (roomId) {
         title.textContent = 'Edit Room';
-        const room = roomsData.find(r => r.id === roomId);
+        const room = rooms.find(r => r._id === roomId);
         if (room) {
-            document.getElementById('room-id').value = room.id;
-            document.getElementById('room-number').value = room.number;
-            document.getElementById('room-type').value = room.type;
-            document.getElementById('room-price').value = room.price;
-            document.getElementById('room-capacity').value = room.capacity;
+            document.getElementById('roomNumber').value = room.number;
+            document.getElementById('roomType').value = room.type;
+            document.getElementById('roomPrice').value = room.price;
+            document.getElementById('roomStatus').value = room.status;
+            document.getElementById('roomId').value = room._id;
         }
     } else {
         title.textContent = 'Add New Room';
-        document.getElementById('room-form').reset();
-        document.getElementById('room-id').value = '';
+        document.getElementById('roomForm').reset();
+        document.getElementById('roomId').value = '';
     }
     
-    showModal('room-modal');
+    modal.classList.add('active');
 }
 
-async function handleRoomSubmit(e) {
-    e.preventDefault();
-    
-    const roomId = document.getElementById('room-id').value;
+function closeRoomModal() {
+    document.getElementById('roomModal').classList.remove('active');
+}
+
+function handleSaveRoom() {
+    const roomId = document.getElementById('roomId').value;
     const roomData = {
-        number: document.getElementById('room-number').value,
-        type: document.getElementById('room-type').value,
-        price: parseFloat(document.getElementById('room-price').value),
-        capacity: parseInt(document.getElementById('room-capacity').value)
+        number: document.getElementById('roomNumber').value.trim(),
+        type: document.getElementById('roomType').value,
+        price: parseInt(document.getElementById('roomPrice').value),
+        status: document.getElementById('roomStatus').value
     };
     
-    if (!roomData.number || !roomData.type || !roomData.price || !roomData.capacity) {
-        showError('Please fill in all required fields!');
+    // Validation
+    if (!roomData.number || !roomData.type || !roomData.price) {
+        showNotification('Please fill all required fields', 'error');
         return;
     }
     
-    try {
-        if (roomId) {
-            // Update room
-            await apiCall(`${API_ENDPOINTS.ROOMS}/${roomId}`, 'PUT', { ...roomData, id: parseInt(roomId) });
-            showSuccess('Room updated successfully!');
-        } else {
-            // Create room
-            roomData.status = 'available';
-            roomData.amenities = ['WiFi', 'TV'];
-            await apiCall(API_ENDPOINTS.ROOMS, 'POST', roomData);
-            showSuccess('Room added successfully!');
+    if (roomId) {
+        // Update existing room
+        const index = rooms.findIndex(r => r._id === roomId);
+        if (index !== -1) {
+            rooms[index] = { ...rooms[index], ...roomData };
+            showNotification('Room updated successfully', 'success');
         }
-        
-        hideModal('room-modal');
-        await loadRooms();
-        updateDashboardStats();
-    } catch (error) {
-        console.error('Error saving room:', error);
-        showError('Failed to save room. Please try again.');
+    } else {
+        // Create new room
+        const newRoom = {
+            _id: Date.now().toString(),
+            ...roomData,
+            createdAt: new Date().toISOString().split('T')[0]
+        };
+        rooms.push(newRoom);
+        showNotification('Room created successfully', 'success');
     }
+    
+    closeRoomModal();
+    loadRooms();
+    if (currentSection === 'dashboard') loadDashboardData();
 }
 
 function editRoom(roomId) {
-    showRoomModal(roomId);
+    openRoomModal(roomId);
 }
 
-// ==================== GUEST FUNCTIONS ====================
-
-function showGuestModal(guestId = null) {
-    const title = document.getElementById('guest-modal-title');
+// Guest Functions
+function openGuestModal(guestId = null) {
+    const modal = document.getElementById('guestModal');
+    const title = document.getElementById('guestModalTitle');
     
     if (guestId) {
         title.textContent = 'Edit Guest';
-        const guest = guestsData.find(g => g.id === guestId);
+        const guest = guests.find(g => g._id === guestId);
         if (guest) {
-            document.getElementById('guest-id').value = guest.id;
-            document.getElementById('guest-name').value = guest.name;
-            document.getElementById('guest-email').value = guest.email;
-            document.getElementById('guest-phone').value = guest.phone;
-            document.getElementById('guest-nationality').value = guest.nationality || '';
+            document.getElementById('guestName').value = guest.name;
+            document.getElementById('guestEmail').value = guest.email;
+            document.getElementById('guestPhone').value = guest.phone;
+            document.getElementById('guestId').value = guest._id;
         }
     } else {
         title.textContent = 'Add New Guest';
-        document.getElementById('guest-form').reset();
-        document.getElementById('guest-id').value = '';
+        document.getElementById('guestForm').reset();
+        document.getElementById('guestId').value = '';
     }
     
-    showModal('guest-modal');
+    modal.classList.add('active');
 }
 
-async function handleGuestSubmit(e) {
-    e.preventDefault();
-    
-    const guestId = document.getElementById('guest-id').value;
+function closeGuestModal() {
+    document.getElementById('guestModal').classList.remove('active');
+}
+
+function handleSaveGuest() {
+    const guestId = document.getElementById('guestId').value;
     const guestData = {
-        name: document.getElementById('guest-name').value,
-        email: document.getElementById('guest-email').value,
-        phone: document.getElementById('guest-phone').value,
-        nationality: document.getElementById('guest-nationality').value
+        name: document.getElementById('guestName').value.trim(),
+        email: document.getElementById('guestEmail').value.trim(),
+        phone: document.getElementById('guestPhone').value.trim()
     };
     
+    // Validation
     if (!guestData.name || !guestData.email || !guestData.phone) {
-        showError('Please fill in all required fields!');
+        showNotification('Please fill all required fields', 'error');
         return;
     }
     
-    try {
-        if (guestId) {
-            // Update guest
-            await apiCall(`${API_ENDPOINTS.GUESTS}/${guestId}`, 'PUT', { ...guestData, id: parseInt(guestId) });
-            showSuccess('Guest updated successfully!');
-        } else {
-            // Create guest
-            await apiCall(API_ENDPOINTS.GUESTS, 'POST', guestData);
-            showSuccess('Guest added successfully!');
+    if (guestId) {
+        // Update existing guest
+        const index = guests.findIndex(g => g._id === guestId);
+        if (index !== -1) {
+            guests[index] = { ...guests[index], ...guestData };
+            showNotification('Guest updated successfully', 'success');
         }
-        
-        hideModal('guest-modal');
-        await loadGuests();
-        updateDashboardStats();
-    } catch (error) {
-        console.error('Error saving guest:', error);
-        showError('Failed to save guest. Please try again.');
+    } else {
+        // Create new guest
+        const newGuest = {
+            _id: Date.now().toString(),
+            ...guestData,
+            createdAt: new Date().toISOString().split('T')[0]
+        };
+        guests.push(newGuest);
+        showNotification('Guest created successfully', 'success');
     }
+    
+    closeGuestModal();
+    loadGuests();
+    if (currentSection === 'dashboard') loadDashboardData();
 }
 
 function editGuest(guestId) {
-    showGuestModal(guestId);
+    openGuestModal(guestId);
 }
 
-// ==================== BOOKING FUNCTIONS ====================
-
-function showBookingModal(bookingId = null) {
-    const title = document.getElementById('booking-modal-title');
+// Booking Functions
+function openBookingModal(bookingId = null) {
+    const modal = document.getElementById('bookingModal');
+    const title = document.getElementById('bookingModalTitle');
     
     // Populate guest dropdown
-    const guestSelect = document.getElementById('booking-guest');
-    guestSelect.innerHTML = '<option value="">Select Guest</option>';
-    guestsData.forEach(guest => {
-        guestSelect.innerHTML += `<option value="${guest.id}">${guest.name} (${guest.email})</option>`;
-    });
-
-    // Populate room dropdown with available rooms
-    const roomSelect = document.getElementById('booking-room');
-    roomSelect.innerHTML = '<option value="">Select Room</option>';
-    roomsData.forEach(room => {
-        if (room.status === 'available') {
-            roomSelect.innerHTML += `<option value="${room.id}" data-price="${room.price}">${room.number} (${room.type}) - $${room.price}/night</option>`;
-        }
-    });
-
-    // Set default dates
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('booking-checkin').valueAsDate = tomorrow;
+    const guestSelect = document.getElementById('bookingGuest');
+    guestSelect.innerHTML = '<option value="">Select Guest</option>' + 
+        guests.map(guest => `<option value="${guest._id}">${guest.name}</option>`).join('');
     
-    const dayAfter = new Date();
-    dayAfter.setDate(dayAfter.getDate() + 2);
-    document.getElementById('booking-checkout').valueAsDate = dayAfter;
-
-    // Reset other fields
-    document.getElementById('booking-status').value = 'confirmed';
-    document.getElementById('booking-guests-count').value = '1';
-    document.getElementById('booking-special-requests').value = '';
-    document.getElementById('booking-total-price').textContent = '0';
-    document.getElementById('booking-id').value = '';
-
+    // Populate room dropdown (only available rooms)
+    const roomSelect = document.getElementById('bookingRoom');
+    const availableRooms = rooms.filter(room => room.status === 'available');
+    roomSelect.innerHTML = '<option value="">Select Room</option>' + 
+        availableRooms.map(room => `<option value="${room._id}">Room ${room.number} - ${room.type} ($${room.price}/night)</option>`).join('');
+    
     if (bookingId) {
         title.textContent = 'Edit Booking';
-        const booking = bookingsData.find(b => b.id === bookingId);
+        const booking = bookings.find(b => b._id === bookingId);
         if (booking) {
-            document.getElementById('booking-id').value = booking.id;
-            document.getElementById('booking-guest').value = booking.guestId;
-            document.getElementById('booking-room').value = booking.roomId;
-            document.getElementById('booking-checkin').value = booking.checkIn;
-            document.getElementById('booking-checkout').value = booking.checkOut;
-            document.getElementById('booking-status').value = booking.status;
-            document.getElementById('booking-guests-count').value = booking.numberOfGuests;
-            document.getElementById('booking-special-requests').value = booking.specialRequests || '';
-            document.getElementById('booking-total-price').textContent = booking.totalPrice || '0';
+            document.getElementById('bookingGuest').value = booking.guestId._id;
+            document.getElementById('bookingRoom').value = booking.roomId._id;
+            document.getElementById('checkIn').value = booking.checkIn;
+            document.getElementById('checkOut').value = booking.checkOut;
+            document.getElementById('bookingStatus').value = booking.status;
+            document.getElementById('bookingId').value = booking._id;
         }
     } else {
         title.textContent = 'Create New Booking';
+        document.getElementById('bookingForm').reset();
+        document.getElementById('bookingId').value = '';
+        
+        // Set default dates
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        
+        document.getElementById('checkIn').value = today;
+        document.getElementById('checkOut').value = tomorrowStr;
     }
     
-    showModal('booking-modal');
-    updateBookingPrice();
+    modal.classList.add('active');
 }
 
-function updateBookingPrice() {
-    const checkin = document.getElementById('booking-checkin').value;
-    const checkout = document.getElementById('booking-checkout').value;
-    const roomId = document.getElementById('booking-room').value;
-    const totalPriceElement = document.getElementById('booking-total-price');
-
-    if (!checkin || !checkout || !roomId) {
-        totalPriceElement.textContent = '0';
-        return;
-    }
-
-    const roomSelect = document.getElementById('booking-room');
-    const selectedOption = roomSelect.options[roomSelect.selectedIndex];
-    const roomPrice = parseFloat(selectedOption.getAttribute('data-price'));
-
-    const nights = calculateNights(checkin, checkout);
-    const totalPrice = nights > 0 ? nights * roomPrice : 0;
-    
-    totalPriceElement.textContent = totalPrice.toFixed(2);
+function closeBookingModal() {
+    document.getElementById('bookingModal').classList.remove('active');
 }
 
-function calculateNights(checkin, checkout) {
-    const checkinDate = new Date(checkin);
-    const checkoutDate = new Date(checkout);
-    const timeDiff = checkoutDate.getTime() - checkinDate.getTime();
-    return Math.ceil(timeDiff / (1000 * 3600 * 24));
-}
-
-async function handleBookingSubmit(e) {
-    e.preventDefault();
-    
-    const bookingId = document.getElementById('booking-id').value;
+function handleSaveBooking() {
+    const bookingId = document.getElementById('bookingId').value;
     const bookingData = {
-        guestId: parseInt(document.getElementById('booking-guest').value),
-        roomId: parseInt(document.getElementById('booking-room').value),
-        checkIn: document.getElementById('booking-checkin').value,
-        checkOut: document.getElementById('booking-checkout').value,
-        status: document.getElementById('booking-status').value,
-        numberOfGuests: parseInt(document.getElementById('booking-guests-count').value) || 1,
-        specialRequests: document.getElementById('booking-special-requests').value,
-        totalPrice: parseFloat(document.getElementById('booking-total-price').textContent)
+        guestId: document.getElementById('bookingGuest').value,
+        roomId: document.getElementById('bookingRoom').value,
+        checkIn: document.getElementById('checkIn').value,
+        checkOut: document.getElementById('checkOut').value,
+        status: document.getElementById('bookingStatus').value
     };
     
+    // Validation
     if (!bookingData.guestId || !bookingData.roomId || !bookingData.checkIn || !bookingData.checkOut) {
-        showError('Please fill in all required fields!');
+        showNotification('Please fill all required fields', 'error');
         return;
     }
-
-    const nights = calculateNights(bookingData.checkIn, bookingData.checkOut);
-    if (nights <= 0) {
-        showError('Check-out date must be after check-in date!');
+    
+    if (new Date(bookingData.checkOut) <= new Date(bookingData.checkIn)) {
+        showNotification('Check-out date must be after check-in date', 'error');
         return;
     }
-
-    try {
-        if (bookingId) {
-            // Update booking
-            await apiCall(`${API_ENDPOINTS.BOOKINGS}/${bookingId}`, 'PUT', { ...bookingData, id: parseInt(bookingId) });
-            showSuccess('Booking updated successfully!');
-        } else {
-            // Create booking
-            await apiCall(API_ENDPOINTS.BOOKINGS, 'POST', bookingData);
-            showSuccess('Booking created successfully!');
+    
+    // Get guest and room details
+    const guest = guests.find(g => g._id === bookingData.guestId);
+    const room = rooms.find(r => r._id === bookingData.roomId);
+    
+    if (!guest || !room) {
+        showNotification('Invalid guest or room selection', 'error');
+        return;
+    }
+    
+    if (bookingId) {
+        // Update existing booking
+        const index = bookings.findIndex(b => b._id === bookingId);
+        if (index !== -1) {
+            const oldBooking = bookings[index];
+            
+            // Restore old room status if needed
+            if (oldBooking.status === 'booked' || oldBooking.status === 'checked-in') {
+                const oldRoomIndex = rooms.findIndex(r => r._id === oldBooking.roomId._id);
+                if (oldRoomIndex !== -1) {
+                    rooms[oldRoomIndex].status = 'available';
+                }
+            }
+            
+            bookings[index] = { 
+                ...bookings[index], 
+                ...bookingData,
+                guestId: guest,
+                roomId: room
+            };
+            
+            showNotification('Booking updated successfully', 'success');
         }
-        
-        hideModal('booking-modal');
-        await loadBookings();
-        await loadRooms(); // Reload rooms to update status
-        updateDashboardStats();
-    } catch (error) {
-        console.error('Error saving booking:', error);
-        showError('Failed to save booking. Please try again.');
+    } else {
+        // Create new booking
+        const newBooking = {
+            _id: Date.now().toString(),
+            ...bookingData,
+            guestId: guest,
+            roomId: room
+        };
+        bookings.push(newBooking);
+        showNotification('Booking created successfully', 'success');
     }
+    
+    // Update room status
+    if (bookingData.status === 'booked' || bookingData.status === 'checked-in') {
+        const roomIndex = rooms.findIndex(r => r._id === bookingData.roomId);
+        if (roomIndex !== -1) {
+            rooms[roomIndex].status = 'occupied';
+        }
+    }
+    
+    closeBookingModal();
+    loadBookings();
+    loadRooms();
+    if (currentSection === 'dashboard') loadDashboardData();
 }
 
 function editBooking(bookingId) {
-    showBookingModal(bookingId);
+    openBookingModal(bookingId);
 }
 
-// ==================== DELETE FUNCTION - FIXED ====================
-
-async function confirmDelete() {
-    if (!currentDeleteInfo) {
-        showError('No item to delete!');
-        return;
-    }
-
-    const { type, id } = currentDeleteInfo;
+// Delete Functions
+function confirmDelete(id, type) {
+    deleteId = id;
+    deleteType = type;
     
+    const message = document.getElementById('confirmMessage');
+    const itemName = getItemName(id, type);
+    message.textContent = `Are you sure you want to delete ${itemName}? This action cannot be undone.`;
+    
+    document.getElementById('confirmModal').classList.add('active');
+}
+
+function getItemName(id, type) {
+    switch(type) {
+        case 'room':
+            const room = rooms.find(r => r._id === id);
+            return room ? `Room ${room.number}` : 'this room';
+        case 'guest':
+            const guest = guests.find(g => g._id === id);
+            return guest ? `Guest ${guest.name}` : 'this guest';
+        case 'booking':
+            const booking = bookings.find(b => b._id === id);
+            return booking ? `Booking ${booking._id}` : 'this booking';
+        default:
+            return 'this item';
+    }
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').classList.remove('active');
+    deleteId = null;
+    deleteType = null;
+}
+
+function handleConfirmDelete() {
+    if (!deleteId || !deleteType) return;
+    
+    switch(deleteType) {
+        case 'room':
+            deleteRoom(deleteId);
+            break;
+        case 'guest':
+            deleteGuest(deleteId);
+            break;
+        case 'booking':
+            deleteBooking(deleteId);
+            break;
+    }
+    
+    closeConfirmModal();
+}
+
+function deleteRoom(id) {
     try {
-        let endpoint;
-        
-        switch(type) {
-            case 'room':
-                endpoint = `${API_ENDPOINTS.ROOMS}/${id}`;
-                break;
-                
-            case 'guest':
-                endpoint = `${API_ENDPOINTS.GUESTS}/${id}`;
-                break;
-                
-            case 'booking':
-                endpoint = `${API_ENDPOINTS.BOOKINGS}/${id}`;
-                break;
+        const index = rooms.findIndex(r => r._id === id);
+        if (index !== -1) {
+            // Check if room is used in any active bookings
+            const activeBooking = bookings.find(b => 
+                b.roomId._id === id && 
+                (b.status === 'booked' || b.status === 'checked-in')
+            );
+            
+            if (activeBooking) {
+                showNotification('Cannot delete room with active bookings', 'error');
+                return;
+            }
+            
+            rooms.splice(index, 1);
+            showNotification('Room deleted successfully', 'success');
+            loadRooms();
+            if (currentSection === 'dashboard') loadDashboardData();
         }
-        
-        // FIXED: Just pass the endpoint, no data needed for DELETE
-        await apiCall(endpoint, 'DELETE');
-        showSuccess(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully!`);
-        
-        currentDeleteInfo = null;
-        hideModal('delete-modal');
-        
-        // Reload data
-        await Promise.all([
-            loadRooms(),
-            loadGuests(),
-            loadBookings()
-        ]);
-        updateDashboardStats();
     } catch (error) {
-        console.error('Error deleting item:', error);
-        showError(`Failed to delete ${type}. Please try again.`);
+        console.error('Error deleting room:', error);
+        showNotification('Error deleting room', 'error');
     }
 }
 
-// ==================== TABLE LOADING FUNCTIONS ====================
-
-function loadRoomsTable() {
-    const tbody = document.getElementById('rooms-table-body');
-    
-    if (roomsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No rooms found</td></tr>';
-        return;
-    }
-
-    const html = roomsData.map(room => `
-        <tr data-id="${room.id}">
-            <td>${room.number}</td>
-            <td>${room.type}</td>
-            <td>$${room.price.toFixed(2)}</td>
-            <td><span class="status-badge status-${room.status}">${room.status}</span></td>
-            <td>${room.capacity}</td>
-            <td>${room.amenities ? room.amenities.join(', ') : ''}</td>
-            <td class="action-buttons">
-                <button class="btn btn-warning action-btn edit-room">Edit</button>
-                <button class="btn btn-danger action-btn delete-room">Delete</button>
-            </td>
-        </tr>
-    `).join('');
-
-    tbody.innerHTML = html;
-}
-
-function loadGuestsTable() {
-    const tbody = document.getElementById('guests-table-body');
-    
-    if (guestsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No guests found</td></tr>';
-        return;
-    }
-
-    const html = guestsData.map(guest => `
-        <tr data-id="${guest.id}">
-            <td>${guest.name}</td>
-            <td>${guest.email}</td>
-            <td>${guest.phone}</td>
-            <td>${guest.nationality || '-'}</td>
-            <td>${guest.idDocument || '-'}</td>
-            <td class="action-buttons">
-                <button class="btn btn-warning action-btn edit-guest">Edit</button>
-                <button class="btn btn-danger action-btn delete-guest">Delete</button>
-            </td>
-        </tr>
-    `).join('');
-
-    tbody.innerHTML = html;
-}
-
-function loadBookingsTable() {
-    const tbody = document.getElementById('bookings-table-body');
-    
-    if (bookingsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No bookings found</td></tr>';
-        return;
-    }
-
-    const html = bookingsData.map(booking => {
-        const guest = guestsData.find(g => g.id === booking.guestId);
-        const room = roomsData.find(r => r.id === booking.roomId);
-        
-        return `
-            <tr data-id="${booking.id}">
-                <td>${guest ? guest.name : 'Unknown Guest'}</td>
-                <td>${room ? room.number + ' (' + room.type + ')' : 'Unknown Room'}</td>
-                <td>${booking.checkIn}</td>
-                <td>${booking.checkOut}</td>
-                <td><span class="status-badge status-${booking.status}">${booking.status}</span></td>
-                <td>$${booking.totalPrice ? booking.totalPrice.toFixed(2) : '0.00'}</td>
-                <td class="action-buttons">
-                    <button class="btn btn-warning action-btn edit-booking">Edit</button>
-                    <button class="btn btn-danger action-btn delete-booking">Delete</button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    tbody.innerHTML = html;
-}
-
-// ==================== DASHBOARD FUNCTIONS ====================
-
-async function updateDashboardStats() {
+function deleteGuest(id) {
     try {
-        const response = await apiCall(API_ENDPOINTS.DASHBOARD, 'GET');
-        const stats = response.data;
-        
-        document.getElementById('total-rooms').textContent = stats.totalRooms || 0;
-        document.getElementById('available-rooms').textContent = stats.availableRooms || 0;
-        document.getElementById('total-guests').textContent = stats.totalGuests || 0;
-        document.getElementById('active-bookings').textContent = stats.activeBookings || 0;
+        const index = guests.findIndex(g => g._id === id);
+        if (index !== -1) {
+            // Check if guest has any bookings
+            const guestBookings = bookings.filter(b => b.guestId._id === id);
+            
+            if (guestBookings.length > 0) {
+                showNotification('Cannot delete guest with existing bookings', 'error');
+                return;
+            }
+            
+            guests.splice(index, 1);
+            showNotification('Guest deleted successfully', 'success');
+            loadGuests();
+            if (currentSection === 'dashboard') loadDashboardData();
+        }
     } catch (error) {
-        console.error('Error loading dashboard stats:', error);
-        // Fallback to local calculation
-        const totalRooms = roomsData.length;
-        const availableRooms = roomsData.filter(room => room.status === 'available').length;
-        const totalGuests = guestsData.length;
-        const activeBookings = bookingsData.filter(booking => 
-            booking.status === 'confirmed' || booking.status === 'checked-in'
-        ).length;
-
-        document.getElementById('total-rooms').textContent = totalRooms;
-        document.getElementById('available-rooms').textContent = availableRooms;
-        document.getElementById('total-guests').textContent = totalGuests;
-        document.getElementById('active-bookings').textContent = activeBookings;
+        console.error('Error deleting guest:', error);
+        showNotification('Error deleting guest', 'error');
     }
 }
 
-// ==================== UTILITY FUNCTIONS ====================
-
-function showModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
+function deleteBooking(id) {
+    try {
+        const index = bookings.findIndex(b => b._id === id);
+        if (index !== -1) {
+            const booking = bookings[index];
+            
+            // Free up the room if booking was active
+            if (booking.status === 'booked' || booking.status === 'checked-in') {
+                const roomIndex = rooms.findIndex(r => r._id === booking.roomId._id);
+                if (roomIndex !== -1) {
+                    rooms[roomIndex].status = 'available';
+                }
+            }
+            
+            bookings.splice(index, 1);
+            showNotification('Booking deleted successfully', 'success');
+            loadBookings();
+            loadRooms();
+            if (currentSection === 'dashboard') loadDashboardData();
+        }
+    } catch (error) {
+        console.error('Error deleting booking:', error);
+        showNotification('Error deleting booking', 'error');
     }
 }
 
-function hideModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.style.display = 'none';
-        document.body.style.overflow = 'auto';
-    }
+// Utility Functions
+function formatDate(dateString) {
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString('en-US', options);
 }
 
-function showSuccess(message) {
-    alert(message);
+function showNotification(message, type = 'info') {
+    const notification = document.getElementById('notification');
+    notification.textContent = message;
+    notification.className = `notification ${type} show`;
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
 }
 
-function showError(message) {
-    alert(`Error: ${message}`);
-}
-
-// ==================== INITIALIZE ====================
-
-console.log('Hotel Management System is ready!');
+// Make functions available globally (for testing)
+window.app = {
+    rooms,
+    guests,
+    bookings,
+    loadRooms,
+    loadGuests,
+    loadBookings,
+    loadDashboardData
+};
