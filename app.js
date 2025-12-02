@@ -2,7 +2,7 @@
 console.log('Hotel Management System Starting...');
 
 // API Configuration
-const API_BASE_URL = 'https://hotelmanangement-api.vercel.app/'; // Change this to your actual API URL
+const API_BASE_URL = 'https://hotelmanagement-api.vercel.app/'; // Change this to your actual API URL
 const MOCK_API = true; // Set to false to use real API
 
 // API Endpoints
